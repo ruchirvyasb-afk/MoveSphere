@@ -45,12 +45,26 @@
         }
 
         body {
-            background-color: var(--bg-main);
+            background: linear-gradient(-45deg, #f1f5f9, #eff6ff, #f8fafc, #e0f2fe);
+            background-size: 400% 400%;
+            animation: gradientBG 12s ease infinite;
             color: var(--text-primary);
             min-height: 100vh;
             display: flex;
             flex-direction: column;
             overflow-x: hidden;
+        }
+
+        @keyframes gradientBG {
+            0% {
+                background-position: 0% 50%;
+            }
+            50% {
+                background-position: 100% 50%;
+            }
+            100% {
+                background-position: 0% 50%;
+            }
         }
 
         h1, h2, h3, h4 {
@@ -1986,12 +2000,14 @@
             }, 2200);
         }
 
+        // Close simulated payment window
         function closePaymentModal() {
             document.getElementById("paymentModal").classList.remove("open");
             switchDashboardTab("tabPass");
             showToast("Transit pass updated and synced to cloud ledger!", "success");
         }
 
+        // Add purchase item to Trip History
         function appendTripLedger(type) {
             const list = document.getElementById("historyList");
             const item = document.createElement("div");
@@ -2026,6 +2042,7 @@
             list.insertBefore(item, list.firstChild);
         }
 
+        // Format Date to custom DD MMM YYYY string
         function formatDate(date) {
             const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
             return `${date.getDate().toString().padStart(2, '0')} ${months[date.getMonth()]} ${date.getFullYear()}`;
@@ -2128,4 +2145,3 @@
     </script>
 </body>
 </html>
-
