@@ -3,9 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
-from schemas import UserCreate, UserLogin, PassCreate
+from schemas import (
+    UserCreate,
+    UserLogin,
+    PassCreate,
+    TicketCreate
+)
+
 from database import SessionLocal
-from models import User, BusPass
+from models import User, BusPass, Ticket
 
 app = FastAPI(
     title="Cloud Bus Pass System API"
@@ -145,6 +151,62 @@ def get_passes(db: Session = Depends(get_db)):
             "issue_date": p.issue_date,
             "expiry_date": p.expiry_date,
             "qr_code": p.qr_code
+        })
+
+    return result
+
+
+# ==========================
+# BOOK TICKET
+# ==========================
+@app.post("/book-ticket")
+def book_ticket(
+    ticket_data: TicketCreate,
+    db: Session = Depends(get_db)
+):
+
+    fare = 250
+
+    new_ticket = Ticket(
+        user_id=ticket_data.user_id,
+        source=ticket_data.source,
+        destination=ticket_data.destination,
+        fare=fare,
+        booking_date=str(datetime.now()),
+        qr_code=f"QR_TICKET_{ticket_data.user_id}"
+    )
+
+    db.add(new_ticket)
+    db.commit()
+    db.refresh(new_ticket)
+
+    return {
+        "message": "Ticket booked successfully",
+        "ticket_id": new_ticket.ticket_id,
+        "fare": fare,
+        "qr_code": new_ticket.qr_code
+    }
+
+
+# ==========================
+# VIEW ALL TICKETS
+# ==========================
+@app.get("/tickets")
+def get_tickets(db: Session = Depends(get_db)):
+
+    tickets = db.query(Ticket).all()
+
+    result = []
+
+    for t in tickets:
+        result.append({
+            "ticket_id": t.ticket_id,
+            "user_id": t.user_id,
+            "source": t.source,
+            "destination": t.destination,
+            "fare": t.fare,
+            "booking_date": t.booking_date,
+            "qr_code": t.qr_code
         })
 
     return result

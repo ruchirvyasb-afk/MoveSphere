@@ -16,3 +16,9 @@ class UserLogin(BaseModel):
 class PassCreate(BaseModel):
     user_id: int
     pass_type: str
+
+
+class TicketCreate(BaseModel):
+    user_id: int
+    source: str
+    destination: str
