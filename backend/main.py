@@ -4,6 +4,9 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import qrcode
 import os
+from fastapi.responses import FileResponse
+from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
 
 from schemas import (
     UserCreate,
@@ -52,6 +55,62 @@ def generate_qr(data, folder, filename):
     qr.save(path)
 
     return path
+# PDF Generator for Bus Pass
+def generate_pass_pdf(bus_pass):
+
+    os.makedirs("pdfs/passes", exist_ok=True)
+
+    pdf_path = f"pdfs/passes/pass_{bus_pass.pass_id}.pdf"
+
+    c = canvas.Canvas(pdf_path)
+
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(200, 800, "BUS PASS")
+
+    c.setFont("Helvetica", 12)
+
+    c.drawString(100, 740, f"Pass ID: {bus_pass.pass_id}")
+    c.drawString(100, 710, f"User ID: {bus_pass.user_id}")
+    c.drawString(100, 680, f"Pass Type: {bus_pass.pass_type}")
+    c.drawString(100, 650, f"Issue Date: {bus_pass.issue_date}")
+    c.drawString(100, 620, f"Expiry Date: {bus_pass.expiry_date}")
+
+    if os.path.exists(bus_pass.qr_code):
+        qr_img = ImageReader(bus_pass.qr_code)
+        c.drawImage(qr_img, 350, 580, width=150, height=150)
+
+    c.save()
+
+    return pdf_path
+
+
+# PDF Generator for Ticket
+def generate_ticket_pdf(ticket):
+
+    os.makedirs("pdfs/tickets", exist_ok=True)
+
+    pdf_path = f"pdfs/tickets/ticket_{ticket.ticket_id}.pdf"
+
+    c = canvas.Canvas(pdf_path)
+
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(200, 800, "BUS TICKET")
+
+    c.setFont("Helvetica", 12)
+
+    c.drawString(100, 740, f"Ticket ID: {ticket.ticket_id}")
+    c.drawString(100, 710, f"User ID: {ticket.user_id}")
+    c.drawString(100, 680, f"Source: {ticket.source}")
+    c.drawString(100, 650, f"Destination: {ticket.destination}")
+    c.drawString(100, 620, f"Fare: ₹{ticket.fare}")
+
+    if os.path.exists(ticket.qr_code):
+        qr_img = ImageReader(ticket.qr_code)
+        c.drawImage(qr_img, 350, 580, width=150, height=150)
+
+    c.save()
+
+    return pdf_path
 
 
 @app.get("/")
@@ -158,15 +217,15 @@ Expiry Date: {new_pass.expiry_date}
 
     db.commit()
     db.refresh(new_pass)
-
+    pdf_path = generate_pass_pdf(new_pass)
     return {
-        "message": "Bus Pass Applied Successfully",
-        "pass_id": new_pass.pass_id,
-        "issue_date": str(issue_date),
-        "expiry_date": str(expiry_date),
-        "qr_code": qr_path
-    }
-
+    "message": "Bus Pass Applied Successfully",
+    "pass_id": new_pass.pass_id,
+    "issue_date": str(issue_date),
+    "expiry_date": str(expiry_date),
+    "qr_code": qr_path,
+    "pdf": pdf_path
+}
 
 # ==========================
 # VIEW ALL PASSES
@@ -259,13 +318,14 @@ Fare: {new_ticket.fare}
 
     db.commit()
     db.refresh(new_ticket)
-
+    pdf_path = generate_ticket_pdf(new_ticket)
     return {
-        "message": "Ticket booked successfully",
-        "ticket_id": new_ticket.ticket_id,
-        "fare": fare,
-        "qr_code": qr_path
-    }
+    "message": "Ticket booked successfully",
+    "ticket_id": new_ticket.ticket_id,
+    "fare": fare,
+    "qr_code": qr_path,
+    "pdf": pdf_path
+}
 
 
 # ==========================
@@ -313,3 +373,39 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
         "email": user.email,
         "phone": user.phone
     }
+    # ==========================
+# DOWNLOAD TICKET PDF
+# ==========================
+@app.get("/download-ticket/{ticket_id}")
+def download_ticket(ticket_id: int):
+
+    pdf_path = f"pdfs/tickets/ticket_{ticket_id}.pdf"
+
+    if not os.path.exists(pdf_path):
+        return {
+            "message": "PDF not found"
+        }
+
+    return FileResponse(
+        path=pdf_path,
+        media_type="application/pdf",
+        filename=f"ticket_{ticket_id}.pdf"
+    )
+    # ==========================
+# DOWNLOAD PASS PDF
+# ==========================
+@app.get("/download-pass/{pass_id}")
+def download_pass(pass_id: int):
+
+    pdf_path = f"pdfs/passes/pass_{pass_id}.pdf"
+
+    if not os.path.exists(pdf_path):
+        return {
+            "message": "PDF not found"
+        }
+
+    return FileResponse(
+        path=pdf_path,
+        media_type="application/pdf",
+        filename=f"pass_{pass_id}.pdf"
+    )
