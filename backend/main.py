@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
@@ -7,12 +7,13 @@ import os
 from fastapi.responses import FileResponse
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
-
+from models import User, BusPass, Ticket, Payment
 from schemas import (
     UserCreate,
     UserLogin,
     PassCreate,
-    TicketCreate
+    TicketCreate,
+    PaymentCreate
 )
 
 from database import SessionLocal
@@ -284,6 +285,18 @@ def book_ticket(
     ticket_data: TicketCreate,
     db: Session = Depends(get_db)
 ):
+    latest_payment = db.query(Payment).filter(
+        Payment.user_id == ticket_data.user_id,
+        Payment.payment_status == "SUCCESS"
+    ).order_by(
+        Payment.payment_id.desc()
+    ).first()
+
+    if not latest_payment:
+        raise HTTPException(
+            status_code=400,
+            detail="Please complete payment before booking ticket"
+        )
 
     fare = 250
 
@@ -409,3 +422,65 @@ def download_pass(pass_id: int):
         media_type="application/pdf",
         filename=f"pass_{pass_id}.pdf"
     )
+@app.post("/make-payment")
+def make_payment(
+    payment: PaymentCreate,
+    db: Session = Depends(get_db)
+    ):
+
+    user = db.query(User).filter(
+        User.user_id == payment.user_id
+    ).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    new_payment = Payment(
+        user_id=payment.user_id,
+        amount=payment.amount,
+        payment_status="SUCCESS"
+    )
+
+    db.add(new_payment)
+    db.commit()
+    db.refresh(new_payment)
+
+    return {
+        "message": "Payment Successful",
+        "payment_id": new_payment.payment_id,
+        "amount": float(new_payment.amount),
+        "status": new_payment.payment_status
+    }
+@app.get("/payments")
+def get_payments(db: Session = Depends(get_db)):
+
+    payments = db.query(Payment).all()
+
+    return [
+        {
+            "payment_id": p.payment_id,
+            "user_id": p.user_id,
+            "amount": float(p.amount),
+            "status": p.payment_status,
+            "payment_date": p.payment_date
+        }
+        for p in payments
+    ]
+@app.get("/admin/payments")
+def admin_payments(db: Session = Depends(get_db)):
+
+    payments = db.query(Payment).all()
+
+    return [
+        {
+            "payment_id": p.payment_id,
+            "user_id": p.user_id,
+            "amount": float(p.amount),
+            "status": p.payment_status,
+            "payment_date": p.payment_date
+        }
+        for p in payments
+    ]

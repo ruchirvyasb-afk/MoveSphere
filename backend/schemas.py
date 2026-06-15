@@ -22,3 +22,8 @@ class TicketCreate(BaseModel):
     user_id: int
     source: str
     destination: str
+
+
+class PaymentCreate(BaseModel):
+    user_id: int
+    amount: float
