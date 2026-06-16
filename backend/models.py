@@ -1,12 +1,7 @@
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    ForeignKey,
-    DECIMAL,
-    TIMESTAMP
-)
-from sqlalchemy.orm import declarative_base
+from decimal import Decimal
+from datetime import datetime
+from sqlalchemy import Integer, String, ForeignKey, DECIMAL, TIMESTAMP
+from sqlalchemy.orm import declarative_base, Mapped, mapped_column
 from sqlalchemy.sql import func
 
 Base = declarative_base()
@@ -18,11 +13,11 @@ Base = declarative_base()
 class User(Base):
     __tablename__ = "users"
 
-    user_id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100))
-    email = Column(String(100))
-    password = Column(String(255))
-    phone = Column(String(15))
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    email: Mapped[str] = mapped_column(String(100))
+    password: Mapped[str] = mapped_column(String(255))
+    phone: Mapped[str] = mapped_column(String(15))
 
 
 # ==========================
@@ -31,17 +26,14 @@ class User(Base):
 class BusPass(Base):
     __tablename__ = "bus_passes"
 
-    pass_id = Column(Integer, primary_key=True, index=True)
-
-    user_id = Column(
-        Integer,
-        ForeignKey("users.user_id")
-    )
-
-    pass_type = Column(String(50))
-    issue_date = Column(String(50))
-    expiry_date = Column(String(50))
-    qr_code = Column(String(255))
+    pass_id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.user_id"))
+    pass_type: Mapped[str] = mapped_column(String(50))
+    issue_date: Mapped[str] = mapped_column(String(50))
+    expiry_date: Mapped[str] = mapped_column(String(50))
+    qr_code: Mapped[str] = mapped_column(String(255))
+    qr_url: Mapped[str] = mapped_column(String(500))
+    pdf_url: Mapped[str] = mapped_column(String(500))
 
 
 # ==========================
@@ -50,19 +42,15 @@ class BusPass(Base):
 class Ticket(Base):
     __tablename__ = "tickets"
 
-    ticket_id = Column(Integer, primary_key=True, index=True)
-
-    user_id = Column(
-        Integer,
-        ForeignKey("users.user_id")
-    )
-
-    source = Column(String(100))
-    destination = Column(String(100))
-    fare = Column(Integer)
-    booking_date = Column(String(100))
-    qr_code = Column(String(255))
-
+    ticket_id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.user_id"))
+    source: Mapped[str] = mapped_column(String(100))
+    destination: Mapped[str] = mapped_column(String(100))
+    fare: Mapped[int] = mapped_column(Integer)
+    booking_date: Mapped[str] = mapped_column(String(100))
+    qr_code: Mapped[str] = mapped_column(String(255))
+    qr_url: Mapped[str] = mapped_column(String(500))
+    pdf_url: Mapped[str] = mapped_column(String(500))
 
 # ==========================
 # PAYMENTS TABLE
@@ -70,26 +58,8 @@ class Ticket(Base):
 class Payment(Base):
     __tablename__ = "payments"
 
-    payment_id = Column(
-        Integer,
-        primary_key=True,
-        index=True
-    )
-
-    user_id = Column(
-        Integer,
-        ForeignKey("users.user_id")
-    )
-
-    amount = Column(
-        DECIMAL(10, 2)
-    )
-
-    payment_status = Column(
-        String(20)
-    )
-
-    payment_date = Column(
-        TIMESTAMP,
-        server_default=func.now()
-    )
+    payment_id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.user_id"))
+    amount: Mapped[Decimal] = mapped_column(DECIMAL(10, 2))
+    payment_status: Mapped[str] = mapped_column(String(20))
+    payment_date: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now())

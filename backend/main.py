@@ -17,7 +17,7 @@ from schemas import (
 )
 
 from database import SessionLocal
-from models import User, BusPass, Ticket
+from s3_utils import upload_file
 
 app = FastAPI(
     title="Cloud Bus Pass System API"
@@ -53,7 +53,7 @@ def generate_qr(data, folder, filename):
 
     path = f"{folder}/{filename}.png"
 
-    qr.save(path)
+    qr.save(str(path))
 
     return path
 # PDF Generator for Bus Pass
@@ -193,7 +193,9 @@ def apply_pass(
         pass_type=pass_data.pass_type,
         issue_date=str(issue_date),
         expiry_date=str(expiry_date),
-        qr_code=""
+        qr_code="",
+        qr_url="",
+        pdf_url=""
     )
 
     db.add(new_pass)
@@ -218,15 +220,43 @@ Expiry Date: {new_pass.expiry_date}
 
     db.commit()
     db.refresh(new_pass)
+
+    # Generate PDF using local QR file
     pdf_path = generate_pass_pdf(new_pass)
+
+    try:
+        # Upload files to S3
+        qr_url = upload_file(
+            qr_path,
+            f"passes/qr/pass_{new_pass.pass_id}.png"
+        )
+
+        pdf_url = upload_file(
+            pdf_path,
+            f"passes/pdf/pass_{new_pass.pass_id}.pdf"
+        )
+
+        # Save S3 URLs in database
+        new_pass.qr_url = qr_url
+        new_pass.pdf_url = pdf_url
+
+        db.commit()
+        db.refresh(new_pass)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"S3 Upload Failed: {str(e)}"
+        )
+
     return {
-    "message": "Bus Pass Applied Successfully",
-    "pass_id": new_pass.pass_id,
-    "issue_date": str(issue_date),
-    "expiry_date": str(expiry_date),
-    "qr_code": qr_path,
-    "pdf": pdf_path
-}
+        "message": "Bus Pass Applied Successfully",
+        "pass_id": new_pass.pass_id,
+        "issue_date": str(issue_date),
+        "expiry_date": str(expiry_date),
+        "qr_url": qr_url,
+        "pdf_url": pdf_url
+    }
 
 # ==========================
 # VIEW ALL PASSES
@@ -280,11 +310,27 @@ def verify_pass(pass_id: int, db: Session = Depends(get_db)):
 # ==========================
 # BOOK TICKET
 # ==========================
+FARE_CHART = {
+    ("Mumbai", "Pune"): 250,
+    ("Pune", "Mumbai"): 250,
+
+    ("Mumbai", "Nashik"): 180,
+    ("Nashik", "Mumbai"): 180,
+
+    ("Pune", "Nashik"): 150,
+    ("Nashik", "Pune"): 150,
+
+    ("Mumbai", "Thane"): 50,
+    ("Thane", "Mumbai"): 50
+}
+
+
 @app.post("/book-ticket")
 def book_ticket(
     ticket_data: TicketCreate,
     db: Session = Depends(get_db)
 ):
+
     latest_payment = db.query(Payment).filter(
         Payment.user_id == ticket_data.user_id,
         Payment.payment_status == "SUCCESS"
@@ -298,7 +344,18 @@ def book_ticket(
             detail="Please complete payment before booking ticket"
         )
 
-    fare = 250
+    route = (
+        ticket_data.source,
+        ticket_data.destination
+    )
+
+    fare = FARE_CHART.get(route)
+
+    if fare is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Route not available"
+        )
 
     new_ticket = Ticket(
         user_id=ticket_data.user_id,
@@ -306,7 +363,9 @@ def book_ticket(
         destination=ticket_data.destination,
         fare=fare,
         booking_date=str(datetime.now()),
-        qr_code=""
+        qr_code="",
+        qr_url="",
+        pdf_url=""
     )
 
     db.add(new_ticket)
@@ -331,14 +390,45 @@ Fare: {new_ticket.fare}
 
     db.commit()
     db.refresh(new_ticket)
+
+    # Generate PDF using local QR image
     pdf_path = generate_ticket_pdf(new_ticket)
+
+    try:
+        # Upload QR to S3
+        qr_url = upload_file(
+            qr_path,
+            f"tickets/qr/ticket_{new_ticket.ticket_id}.png"
+        )
+
+        # Upload PDF to S3
+        pdf_url = upload_file(
+            pdf_path,
+            f"tickets/pdf/ticket_{new_ticket.ticket_id}.pdf"
+        )
+
+        # Save S3 URLs in database
+        new_ticket.qr_url = qr_url
+        new_ticket.pdf_url = pdf_url
+
+        db.commit()
+        db.refresh(new_ticket)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"S3 Upload Failed: {str(e)}"
+        )
+
     return {
-    "message": "Ticket booked successfully",
-    "ticket_id": new_ticket.ticket_id,
-    "fare": fare,
-    "qr_code": qr_path,
-    "pdf": pdf_path
-}
+        "message": "Ticket booked successfully",
+        "ticket_id": new_ticket.ticket_id,
+        "source": new_ticket.source,
+        "destination": new_ticket.destination,
+        "fare": fare,
+        "qr_url": qr_url,
+        "pdf_url": pdf_url
+    }
 
 
 # ==========================
@@ -484,3 +574,59 @@ def admin_payments(db: Session = Depends(get_db)):
         }
         for p in payments
     ]
+@app.get("/health")
+def health():
+    return {
+        "status": "healthy"
+    }
+@app.get("/admin/stats")
+def admin_stats(db: Session = Depends(get_db)):
+
+    total_users = db.query(User).count()
+    total_passes = db.query(BusPass).count()
+    total_tickets = db.query(Ticket).count()
+
+    payments = db.query(Payment).all()
+
+    revenue = sum(float(p.amount) for p in payments)
+
+    return {
+        "total_users": total_users,
+        "total_passes": total_passes,
+        "total_tickets": total_tickets,
+        "total_revenue": revenue
+    }
+@app.get("/verify-ticket/{ticket_id}")
+def verify_ticket(ticket_id: int, db: Session = Depends(get_db)):
+    
+    ticket = db.query(Ticket).filter(
+        Ticket.ticket_id == ticket_id
+    ).first()
+
+    if not ticket:
+        raise HTTPException(
+            status_code=404,
+            detail="Ticket not found"
+        )
+
+    return {
+        "ticket_id": ticket.ticket_id,
+        "source": ticket.source,
+        "destination": ticket.destination,
+        "fare": ticket.fare,
+        "status": "VALID"
+    }
+@app.get("/user/{user_id}/passes")
+def get_user_passes(user_id: int, db: Session = Depends(get_db)):
+    passes = db.query(BusPass).filter(
+        BusPass.user_id == user_id
+    ).all()
+
+    return passes
+@app.get("/user/{user_id}/tickets")
+def get_user_tickets(user_id: int, db: Session = Depends(get_db)):
+    tickets = db.query(Ticket).filter(
+        Ticket.user_id == user_id
+    ).all()
+
+    return tickets

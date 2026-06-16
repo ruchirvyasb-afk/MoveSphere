@@ -5,9 +5,9 @@ DATABASE_URL = "mysql+pymysql://root:ruchir%40123456@localhost/bus_pass_system"
 
 engine = create_engine(
     DATABASE_URL,
-    echo=True
+    echo=True,
+    pool_pre_ping=True
 )
-
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
