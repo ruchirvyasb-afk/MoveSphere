@@ -6,7 +6,6 @@ pymysql==1.1.1
 
 pydantic==2.11.7
 
-
 python-multipart==0.0.20
 
 passlib[bcrypt]==1.7.4
@@ -18,8 +17,6 @@ qrcode[pil]==8.2
 pillow==11.3.0
 reportlab==4.0.0
 
-
 boto3==1.43.30
 python-dotenv==1.1.1
 cryptography==45.0.5
-python-dotenv==1.1.1
