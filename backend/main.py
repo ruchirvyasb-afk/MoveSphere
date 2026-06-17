@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 from models import User, BusPass, Ticket, Payment
+from passlib.context import CryptContext
 from schemas import (
     UserCreate,
     UserLogin,
@@ -18,10 +19,26 @@ from schemas import (
 
 from database import SessionLocal
 from s3_utils import upload_file
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto"
+)
 
 app = FastAPI(
     title="Cloud Bus Pass System API"
 )
+def hash_password(password: str):
+    return pwd_context.hash(password)
+
+
+def verify_password(
+    plain_password: str,
+    hashed_password: str
+):
+    return pwd_context.verify(
+        plain_password,
+        hashed_password
+    )
 
 # CORS Configuration
 app.add_middleware(
@@ -137,11 +154,11 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         }
 
     new_user = User(
-        name=user.name,
-        email=user.email,
-        password=user.password,
-        phone=user.phone
-    )
+    name=user.name,
+    email=user.email,
+    password=hash_password(user.password),
+    phone=user.phone
+)
 
     db.add(new_user)
     db.commit()
@@ -160,15 +177,14 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 def login(user: UserLogin, db: Session = Depends(get_db)):
 
     db_user = db.query(User).filter(
-        User.email == user.email,
-        User.password == user.password
+        User.email == user.email
     ).first()
 
-    if not db_user:
-        return {
-            "message": "Invalid credentials"
-        }
-
+    if not db_user or not verify_password(user.password, db_user.password):
+        raise HTTPException(
+    status_code=401,
+    detail="Invalid credentials"
+)
     return {
         "message": "Login successful",
         "user_id": db_user.user_id,

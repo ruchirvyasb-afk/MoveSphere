@@ -1,11 +1,15 @@
+from sqlalchemy import False_
+import os
+from dotenv import load_dotenv
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-
-DATABASE_URL = "mysql+pymysql://root:ruchir%40123456@localhost/bus_pass_system"
+load_dotenv
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 engine = create_engine(
     DATABASE_URL,
-    echo=True,
+    echo=False,
     pool_pre_ping=True
 )
 SessionLocal = sessionmaker(
