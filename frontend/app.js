@@ -4,7 +4,7 @@
    ============================================ */
 
 // ============ CONFIGURATION ============
-const API_BASE_URL = 'REPLACE_WITH_RENDER_BACKEND_URL';
+const API_BASE_URL = 'https://movesphere.onrender.com';
 
 // ============ STATE ============
 let currentUser = null;
