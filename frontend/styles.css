@@ -1552,6 +1552,380 @@ img {
 }
 
 /* =========================================
+   BUS SELECTION CARDS
+   ========================================= */
+.bus-list-section {
+    margin-bottom: 24px;
+}
+
+.bus-list-section h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.bus-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 340px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.bus-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    background: var(--bg);
+    border: 2px solid var(--border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+}
+
+.bus-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--primary);
+    opacity: 0;
+    transition: var(--transition);
+}
+
+.bus-card:hover {
+    border-color: rgba(37, 99, 235, 0.3);
+    background: rgba(37, 99, 235, 0.02);
+    transform: translateX(2px);
+    box-shadow: var(--shadow-sm);
+}
+
+.bus-card:hover::before {
+    opacity: 1;
+}
+
+.bus-card.selected {
+    border-color: var(--primary);
+    background: rgba(37, 99, 235, 0.06);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.bus-card.selected::before {
+    opacity: 1;
+    width: 4px;
+}
+
+.bus-card-route {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.bus-card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    background: rgba(37, 99, 235, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.bus-card-icon svg {
+    width: 20px;
+    height: 20px;
+    fill: var(--primary);
+}
+
+.bus-card.selected .bus-card-icon {
+    background: var(--primary);
+}
+
+.bus-card.selected .bus-card-icon svg {
+    fill: white;
+}
+
+.bus-card-info h5 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 2px;
+}
+
+.bus-card-info p {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.bus-card-fare {
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.bus-card-fare .fare-amount {
+    font-family: 'Outfit', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--primary);
+    line-height: 1;
+}
+
+.bus-card-fare .fare-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.bus-card.selected .bus-card-fare .fare-amount {
+    color: var(--primary-dark);
+}
+
+.bus-card-check {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-left: 12px;
+    transition: var(--transition);
+}
+
+.bus-card.selected .bus-card-check {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.bus-card.selected .bus-card-check svg {
+    display: block;
+}
+
+.bus-card-check svg {
+    width: 12px;
+    height: 12px;
+    color: white;
+    display: none;
+}
+
+.bus-no-results {
+    text-align: center;
+    padding: 30px 20px;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+.bus-no-results svg {
+    width: 40px;
+    height: 40px;
+    color: var(--border);
+    margin: 0 auto 8px;
+    display: block;
+}
+
+/* -- Fare Summary Banner -- */
+.fare-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(56, 189, 248, 0.06));
+    border: 1px solid rgba(37, 99, 235, 0.15);
+    border-radius: var(--radius-md);
+    margin-bottom: 16px;
+    animation: fadeSlideIn 0.3s ease-out;
+}
+
+.fare-summary-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.fare-summary-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(37, 99, 235, 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.fare-summary-icon svg {
+    width: 18px;
+    height: 18px;
+    color: var(--primary);
+}
+
+.fare-summary-text h5 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 1px;
+}
+
+.fare-summary-text p {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.fare-summary-amount {
+    font-family: 'Outfit', sans-serif;
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--primary);
+}
+
+/* =========================================
+   PASS FARE DISPLAY
+   ========================================= */
+.pass-fare-display {
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.06), rgba(139, 92, 246, 0.06));
+    border: 1px solid rgba(37, 99, 235, 0.12);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    text-align: center;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    animation: fadeSlideIn 0.3s ease-out;
+}
+
+.pass-fare-display .pass-fare-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.pass-fare-display .pass-fare-amount {
+    font-family: 'Outfit', sans-serif;
+    font-size: 36px;
+    font-weight: 800;
+    color: var(--primary);
+    line-height: 1.1;
+}
+
+.pass-fare-display .pass-fare-duration {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+/* =========================================
+   PAYMENT CONTEXT BANNER
+   ========================================= */
+.payment-context-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #0F172A, #1e293b);
+    border-radius: var(--radius-md);
+    margin-bottom: 20px;
+    color: white;
+    animation: fadeSlideIn 0.3s ease-out;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.payment-context-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.payment-context-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-sm);
+    background: rgba(37, 99, 235, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.payment-context-icon svg {
+    width: 22px;
+    height: 22px;
+    color: #60A5FA;
+}
+
+.payment-context-info h4 {
+    font-size: 15px;
+    font-weight: 600;
+    color: white;
+    margin-bottom: 2px;
+}
+
+.payment-context-info p {
+    font-size: 12px;
+    color: #94A3B8;
+}
+
+.payment-context-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.payment-context-amount {
+    font-family: 'Outfit', sans-serif;
+    font-size: 28px;
+    font-weight: 800;
+    color: #60A5FA;
+}
+
+.payment-context-cancel {
+    background: rgba(239, 68, 68, 0.15);
+    color: #FCA5A5;
+    border: none;
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-fast);
+    font-family: 'Inter', sans-serif;
+}
+
+.payment-context-cancel:hover {
+    background: rgba(239, 68, 68, 0.25);
+    color: white;
+}
+
+/* Search filter icon animation */
+.search-filter-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.search-filter-row .form-group {
+    margin-bottom: 0;
+}
+
+/* =========================================
    RESPONSIVE BREAKPOINTS
    ========================================= */
 @media (max-width: 1024px) {
@@ -1566,6 +1940,7 @@ img {
     .overview-grid { grid-template-columns: repeat(2, 1fr); }
     .quick-actions-grid { grid-template-columns: repeat(2, 1fr); }
     .pass-form-layout { grid-template-columns: 1fr; }
+    .search-filter-row { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 768px) {
@@ -1594,6 +1969,11 @@ img {
     .quick-actions-grid { grid-template-columns: repeat(2, 1fr); }
 
     .ticket-details-grid { grid-template-columns: 1fr; }
+    .payment-context-banner { flex-direction: column; text-align: center; }
+    .payment-context-left { flex-direction: column; text-align: center; }
+    .payment-context-right { justify-content: center; }
+    .fare-summary { flex-direction: column; text-align: center; gap: 12px; }
+    .fare-summary-left { flex-direction: column; text-align: center; }
 }
 
 @media (max-width: 480px) {

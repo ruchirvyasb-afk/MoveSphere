@@ -6,6 +6,24 @@
 // ============ CONFIGURATION ============
 const API_BASE_URL = 'https://movesphere.onrender.com';
 
+// ============ ROUTES & PRICING ============
+const ROUTES = [
+    { source: 'Mumbai', destination: 'Pune', fare: 250, busName: 'MS Express 101', duration: '3h 30m' },
+    { source: 'Pune', destination: 'Mumbai', fare: 250, busName: 'MS Express 102', duration: '3h 30m' },
+    { source: 'Mumbai', destination: 'Nashik', fare: 180, busName: 'MS Express 201', duration: '4h 00m' },
+    { source: 'Nashik', destination: 'Mumbai', fare: 180, busName: 'MS Express 202', duration: '4h 00m' },
+    { source: 'Pune', destination: 'Nashik', fare: 150, busName: 'MS Express 301', duration: '3h 00m' },
+    { source: 'Nashik', destination: 'Pune', fare: 150, busName: 'MS Express 302', duration: '3h 00m' },
+    { source: 'Mumbai', destination: 'Thane', fare: 50, busName: 'MS Local 401', duration: '0h 45m' },
+    { source: 'Thane', destination: 'Mumbai', fare: 50, busName: 'MS Local 402', duration: '0h 45m' },
+];
+
+const PASS_FARES = {
+    daily: { amount: 50, label: 'Daily Pass', duration: 'Valid for 1 day' },
+    weekly: { amount: 250, label: 'Weekly Pass', duration: 'Valid for 7 days' },
+    monthly: { amount: 800, label: 'Monthly Pass', duration: 'Valid for 30 days' }
+};
+
 // ============ STATE ============
 let currentUser = null;
 let appState = {
@@ -14,6 +32,10 @@ let appState = {
     payments: [],
     isLoading: false
 };
+
+// Pending items waiting for payment
+let pendingTicket = null;  // { source, destination, fare }
+let pendingPass = null;    // { passType, fare }
 
 // ============ INITIALIZATION ============
 document.addEventListener('DOMContentLoaded', () => {
@@ -54,6 +76,12 @@ function initApp() {
             setTimeout(() => loader.remove(), 300);
         }
     }, 600);
+
+    // Setup bus search filter listeners
+    setupBusFilters();
+
+    // Setup pass type change listener
+    setupPassFareListener();
 }
 
 // ============ PAGE NAVIGATION ============
@@ -126,6 +154,30 @@ function switchDashTab(tabId) {
     });
     const targetPage = document.getElementById(`dash-${tabId}`);
     if (targetPage) targetPage.classList.add('active');
+
+    // Render bus list when ticket tab is shown
+    if (tabId === 'ticket') {
+        renderBusList();
+    }
+
+    // Update payment context when payment tab is shown
+    if (tabId === 'payment') {
+        updatePaymentContext();
+    }
+
+    // Update pass fare display when pass tab is shown
+    if (tabId === 'pass') {
+        updatePassFare();
+    }
+
+    // Auto-populate user IDs
+    if (currentUser && currentUser.user_id) {
+        const fields = ['paymentUserId', 'passUserId', 'ticketUserId'];
+        fields.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = currentUser.user_id;
+        });
+    }
 
     // Close mobile sidebar
     closeMobileSidebar();
@@ -305,9 +357,233 @@ async function loginUser() {
 function logout() {
     currentUser = null;
     appState = { passes: [], tickets: [], payments: [], isLoading: false };
+    pendingTicket = null;
+    pendingPass = null;
     localStorage.removeItem('movesphere_user');
     showToast('You have been signed out.', 'info');
     showLanding();
+}
+
+// ============ BUS LIST RENDERING ============
+function renderBusList(filterSource = '', filterDest = '') {
+    const container = document.getElementById('busListContainer');
+    if (!container) return;
+
+    const srcFilter = filterSource.toLowerCase().trim();
+    const destFilter = filterDest.toLowerCase().trim();
+
+    // Filter routes — show unique routes (deduplicate by showing only one direction)
+    let filtered = ROUTES.filter(route => {
+        const matchSource = !srcFilter || route.source.toLowerCase().includes(srcFilter);
+        const matchDest = !destFilter || route.destination.toLowerCase().includes(destFilter);
+        return matchSource && matchDest;
+    });
+
+    if (filtered.length === 0) {
+        container.innerHTML = `
+            <div class="bus-no-results">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/>
+                </svg>
+                <p>No buses found for this route. Try different cities.</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = filtered.map(route => {
+        const isSelected = pendingTicket &&
+            pendingTicket.source === route.source &&
+            pendingTicket.destination === route.destination;
+
+        return `
+            <div class="bus-card ${isSelected ? 'selected' : ''}"
+                 onclick="selectBus('${route.source}', '${route.destination}', ${route.fare}, '${route.busName}')"
+                 id="bus-${route.source}-${route.destination}">
+                <div class="bus-card-route">
+                    <div class="bus-card-icon">
+                        ${getBusSVG()}
+                    </div>
+                    <div class="bus-card-info">
+                        <h5>${route.source} → ${route.destination}</h5>
+                        <p>${route.busName} • ${route.duration}</p>
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;">
+                    <div class="bus-card-fare">
+                        <div class="fare-amount">₹${route.fare}</div>
+                        <div class="fare-label">per seat</div>
+                    </div>
+                    <div class="bus-card-check">
+                        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function selectBus(source, destination, fare, busName) {
+    // Set pending ticket state
+    pendingTicket = { source, destination, fare, busName };
+
+    // Auto-fill the source/destination fields
+    const srcField = document.getElementById('ticketSource');
+    const destField = document.getElementById('ticketDest');
+    if (srcField) srcField.value = source;
+    if (destField) destField.value = destination;
+
+    // Show fare summary
+    const fareSummary = document.getElementById('ticketFareSummary');
+    if (fareSummary) {
+        fareSummary.classList.remove('hidden');
+        fareSummary.innerHTML = `
+            <div class="fare-summary-left">
+                <div class="fare-summary-icon">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+                <div class="fare-summary-text">
+                    <h5>${source} → ${destination}</h5>
+                    <p>${busName} selected</p>
+                </div>
+            </div>
+            <div class="fare-summary-amount">₹${fare}</div>
+        `;
+    }
+
+    // Re-render bus list to update selected state
+    renderBusList(
+        document.getElementById('ticketSource')?.value || '',
+        document.getElementById('ticketDest')?.value || ''
+    );
+
+    showToast(`Selected: ${source} → ${destination} (₹${fare})`, 'success');
+}
+
+function setupBusFilters() {
+    // Setup debounced filter on source/destination inputs
+    const srcField = document.getElementById('ticketSource');
+    const destField = document.getElementById('ticketDest');
+
+    let filterTimeout;
+    const debounceFilter = () => {
+        clearTimeout(filterTimeout);
+        filterTimeout = setTimeout(() => {
+            renderBusList(
+                srcField?.value || '',
+                destField?.value || ''
+            );
+        }, 200);
+    };
+
+    if (srcField) srcField.addEventListener('input', debounceFilter);
+    if (destField) destField.addEventListener('input', debounceFilter);
+}
+
+// ============ PASS FARE DISPLAY ============
+function setupPassFareListener() {
+    const passTypeSelect = document.getElementById('passType');
+    if (passTypeSelect) {
+        passTypeSelect.addEventListener('change', updatePassFare);
+    }
+}
+
+function updatePassFare() {
+    const passType = document.getElementById('passType')?.value;
+    const fareDisplay = document.getElementById('passFareDisplay');
+
+    if (!fareDisplay) return;
+
+    if (passType && PASS_FARES[passType]) {
+        const fareInfo = PASS_FARES[passType];
+        fareDisplay.classList.remove('hidden');
+        fareDisplay.innerHTML = `
+            <div class="pass-fare-label">Pass Fare</div>
+            <div class="pass-fare-amount">₹${fareInfo.amount}</div>
+            <div class="pass-fare-duration">${fareInfo.duration}</div>
+        `;
+    } else {
+        fareDisplay.classList.add('hidden');
+    }
+}
+
+// ============ PAYMENT CONTEXT ============
+function updatePaymentContext() {
+    const banner = document.getElementById('paymentContextBanner');
+    const amountField = document.getElementById('paymentAmount');
+
+    if (!banner) return;
+
+    if (pendingTicket) {
+        banner.classList.remove('hidden');
+        banner.innerHTML = `
+            <div class="payment-context-left">
+                <div class="payment-context-icon">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                    </svg>
+                </div>
+                <div class="payment-context-info">
+                    <h4>🎫 Ticket Booking</h4>
+                    <p>${pendingTicket.source} → ${pendingTicket.destination} • ${pendingTicket.busName || ''}</p>
+                </div>
+            </div>
+            <div class="payment-context-right">
+                <div class="payment-context-amount">₹${pendingTicket.fare}</div>
+                <button class="payment-context-cancel" onclick="cancelPendingPayment()">Cancel</button>
+            </div>
+        `;
+        if (amountField) {
+            amountField.value = pendingTicket.fare;
+            amountField.readOnly = true;
+        }
+    } else if (pendingPass) {
+        banner.classList.remove('hidden');
+        const fareInfo = PASS_FARES[pendingPass.passType];
+        banner.innerHTML = `
+            <div class="payment-context-left">
+                <div class="payment-context-icon">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"/>
+                    </svg>
+                </div>
+                <div class="payment-context-info">
+                    <h4>🎟️ Bus Pass Purchase</h4>
+                    <p>${fareInfo ? fareInfo.label : pendingPass.passType} • ${fareInfo ? fareInfo.duration : ''}</p>
+                </div>
+            </div>
+            <div class="payment-context-right">
+                <div class="payment-context-amount">₹${pendingPass.fare}</div>
+                <button class="payment-context-cancel" onclick="cancelPendingPayment()">Cancel</button>
+            </div>
+        `;
+        if (amountField) {
+            amountField.value = pendingPass.fare;
+            amountField.readOnly = true;
+        }
+    } else {
+        banner.classList.add('hidden');
+        if (amountField) {
+            amountField.readOnly = false;
+        }
+    }
+}
+
+function cancelPendingPayment() {
+    const returnTab = pendingTicket ? 'ticket' : (pendingPass ? 'pass' : 'overview');
+    pendingTicket = null;
+    pendingPass = null;
+    const amountField = document.getElementById('paymentAmount');
+    if (amountField) {
+        amountField.value = '';
+        amountField.readOnly = false;
+    }
+    switchDashTab(returnTab);
+    showToast('Payment cancelled', 'info');
 }
 
 // ============ PAYMENT ============
@@ -350,6 +626,13 @@ async function makePayment() {
 
         updateDashboardOverview();
         showToast('Payment completed successfully!', 'success');
+
+        // Handle pending ticket or pass
+        if (pendingTicket) {
+            await completePendingTicket();
+        } else if (pendingPass) {
+            await completePendingPass();
+        }
     } catch (error) {
         closeModal('paymentProcessingModal');
         showToast(error.message || 'Payment failed. Please try again.', 'error');
@@ -358,7 +641,130 @@ async function makePayment() {
     }
 }
 
+async function completePendingTicket() {
+    if (!pendingTicket) return;
+
+    const ticketData = { ...pendingTicket };
+
+    try {
+        const data = await apiRequest('/book-ticket', 'POST', {
+            user_id: currentUser.user_id,
+            source: ticketData.source,
+            destination: ticketData.destination
+        });
+
+        appState.tickets.push(data);
+        updateDashboardOverview();
+
+        showToast(`Ticket booked: ${ticketData.source} → ${ticketData.destination}!`, 'success');
+
+        // Clear pending state
+        pendingTicket = null;
+        const amountField = document.getElementById('paymentAmount');
+        if (amountField) {
+            amountField.value = '';
+            amountField.readOnly = false;
+        }
+
+        // Override the Done button to show ticket
+        const doneBtn = document.querySelector('#paymentSuccess .btn-primary');
+        if (doneBtn) {
+            doneBtn.dataset.pendingAction = 'showTicket';
+            doneBtn.dataset.ticketData = JSON.stringify(data);
+            doneBtn.dataset.source = ticketData.source;
+            doneBtn.dataset.destination = ticketData.destination;
+        }
+    } catch (error) {
+        showToast('Payment succeeded but ticket booking failed: ' + error.message, 'warning');
+        pendingTicket = null;
+    }
+}
+
+async function completePendingPass() {
+    if (!pendingPass) return;
+
+    const passData = { ...pendingPass };
+
+    try {
+        const data = await apiRequest('/apply-pass', 'POST', {
+            user_id: currentUser.user_id,
+            pass_type: passData.passType
+        });
+
+        appState.passes.push(data);
+        updateDashboardOverview();
+
+        showToast(`${PASS_FARES[passData.passType]?.label || 'Bus Pass'} generated successfully!`, 'success');
+
+        // Clear pending state
+        pendingPass = null;
+        const amountField = document.getElementById('paymentAmount');
+        if (amountField) {
+            amountField.value = '';
+            amountField.readOnly = false;
+        }
+
+        // Override the Done button to show pass
+        const doneBtn = document.querySelector('#paymentSuccess .btn-primary');
+        if (doneBtn) {
+            doneBtn.dataset.pendingAction = 'showPass';
+            doneBtn.dataset.passData = JSON.stringify(data);
+            doneBtn.dataset.passType = passData.passType;
+        }
+    } catch (error) {
+        showToast('Payment succeeded but pass generation failed: ' + error.message, 'warning');
+        pendingPass = null;
+    }
+}
+
 function resetPaymentModal() {
+    // Check if there's a pending action
+    const doneBtn = document.querySelector('#paymentSuccess .btn-primary');
+    const pendingAction = doneBtn?.dataset.pendingAction;
+
+    if (pendingAction === 'showTicket') {
+        const ticketData = JSON.parse(doneBtn.dataset.ticketData || '{}');
+        const source = doneBtn.dataset.source;
+        const destination = doneBtn.dataset.destination;
+
+        // Clean up
+        delete doneBtn.dataset.pendingAction;
+        delete doneBtn.dataset.ticketData;
+        delete doneBtn.dataset.source;
+        delete doneBtn.dataset.destination;
+
+        document.getElementById('paymentProcessing').classList.remove('hidden');
+        document.getElementById('paymentSuccess').classList.add('hidden');
+        closeModal('paymentProcessingModal');
+        document.getElementById('paymentAmount').value = '';
+
+        // Switch to ticket tab and show the booked ticket
+        switchDashTab('ticket');
+        displayBookedTicket(ticketData, source, destination);
+        return;
+    }
+
+    if (pendingAction === 'showPass') {
+        const passData = JSON.parse(doneBtn.dataset.passData || '{}');
+        const passType = doneBtn.dataset.passType;
+
+        // Clean up
+        delete doneBtn.dataset.pendingAction;
+        delete doneBtn.dataset.passData;
+        delete doneBtn.dataset.passType;
+
+        document.getElementById('paymentProcessing').classList.remove('hidden');
+        document.getElementById('paymentSuccess').classList.add('hidden');
+        closeModal('paymentProcessingModal');
+        document.getElementById('paymentAmount').value = '';
+
+        // Switch to pass tab and show the generated pass
+        switchDashTab('pass');
+        displayGeneratedPass(passData, passType);
+        return;
+    }
+
+    // Default reset
     document.getElementById('paymentProcessing').classList.remove('hidden');
     document.getElementById('paymentSuccess').classList.add('hidden');
     closeModal('paymentProcessingModal');
@@ -376,27 +782,18 @@ async function generatePass() {
         return;
     }
 
-    setButtonLoading('btnGeneratePass', true);
-
-    try {
-        const data = await apiRequest('/apply-pass', 'POST', {
-            user_id: currentUser.user_id,
-            pass_type: passType
-        });
-
-        showToast('Bus Pass generated successfully!', 'success');
-
-        // Show the generated pass card
-        displayGeneratedPass(data, passType);
-
-        // Add to local state
-        appState.passes.push(data);
-        updateDashboardOverview();
-    } catch (error) {
-        showToast(error.message || 'Failed to generate pass. Please try again.', 'error');
-    } finally {
-        setButtonLoading('btnGeneratePass', false);
+    const fareInfo = PASS_FARES[passType];
+    if (!fareInfo) {
+        showToast('Invalid pass type', 'error');
+        return;
     }
+
+    // Set pending pass and redirect to payment
+    pendingPass = { passType, fare: fareInfo.amount };
+    showToast(`Redirecting to payment for ${fareInfo.label} (₹${fareInfo.amount})...`, 'info');
+
+    // Switch to payment tab — context will be auto-updated
+    switchDashTab('payment');
 }
 
 function displayGeneratedPass(data, passType) {
@@ -451,25 +848,29 @@ async function bookTicket() {
     }
     if (hasError) return;
 
-    setButtonLoading('btnBookTicket', true);
+    // Find the fare for this route
+    const route = ROUTES.find(r =>
+        r.source.toLowerCase() === source.toLowerCase() &&
+        r.destination.toLowerCase() === destination.toLowerCase()
+    );
 
-    try {
-        const data = await apiRequest('/book-ticket', 'POST', {
-            user_id: currentUser.user_id,
-            source,
-            destination
-        });
-
-        showToast('Ticket booked successfully!', 'success');
-        displayBookedTicket(data, source, destination);
-
-        appState.tickets.push(data);
-        updateDashboardOverview();
-    } catch (error) {
-        showToast(error.message || 'Ticket booking failed. Ensure payment is made first.', 'error');
-    } finally {
-        setButtonLoading('btnBookTicket', false);
+    if (!route) {
+        showToast('Route not available. Please select a bus from the list.', 'error');
+        return;
     }
+
+    // Set pending ticket and redirect to payment
+    pendingTicket = {
+        source: route.source,
+        destination: route.destination,
+        fare: route.fare,
+        busName: route.busName
+    };
+
+    showToast(`Redirecting to payment for ${route.source} → ${route.destination} (₹${route.fare})...`, 'info');
+
+    // Switch to payment tab — context will be auto-updated
+    switchDashTab('payment');
 }
 
 function displayBookedTicket(data, source, destination) {
@@ -499,6 +900,10 @@ function displayBookedTicket(data, source, destination) {
     } else {
         downloadBtn.onclick = () => window.open(`${API_BASE_URL}/download-ticket/${data.ticket_id}`, '_blank');
     }
+
+    // Clear the fare summary since ticket is booked
+    const fareSummary = document.getElementById('ticketFareSummary');
+    if (fareSummary) fareSummary.classList.add('hidden');
 
     container.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
