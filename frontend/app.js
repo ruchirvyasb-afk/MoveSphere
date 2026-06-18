@@ -4,7 +4,7 @@
    ============================================ */
 
 // ============ CONFIGURATION ============
-const API_BASE_URL = 'https://movesphere.onrender.com';
+const API_BASE_URL = 'http://127.0.0.1:8081';
 
 // ============ ROUTES & PRICING ============
 const ROUTES = [
@@ -158,6 +158,10 @@ function switchDashTab(tabId) {
     // Render bus list when ticket tab is shown
     if (tabId === 'ticket') {
         renderBusList();
+        const busesCard = document.getElementById('availableBusesCard');
+        if (busesCard) busesCard.classList.remove('hidden');
+        const bookedContainer = document.getElementById('bookedTicketContainer');
+        if (bookedContainer) bookedContainer.classList.add('hidden');
     }
 
     // Update payment context when payment tab is shown
@@ -168,6 +172,8 @@ function switchDashTab(tabId) {
     // Update pass fare display when pass tab is shown
     if (tabId === 'pass') {
         updatePassFare();
+        const genPassContainer = document.getElementById('generatedPassContainer');
+        if (genPassContainer) genPassContainer.classList.add('hidden');
     }
 
     // Auto-populate user IDs
@@ -515,6 +521,7 @@ function updatePassFare() {
 function updatePaymentContext() {
     const banner = document.getElementById('paymentContextBanner');
     const amountField = document.getElementById('paymentAmount');
+    const payBtn = document.getElementById('btnPayment');
 
     if (!banner) return;
 
@@ -541,6 +548,15 @@ function updatePaymentContext() {
             amountField.value = pendingTicket.fare;
             amountField.readOnly = true;
         }
+        if (payBtn) {
+            payBtn.disabled = false;
+            payBtn.innerHTML = `
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Pay ₹${pendingTicket.fare} & Book Ticket
+            `;
+        }
     } else if (pendingPass) {
         banner.classList.remove('hidden');
         const fareInfo = PASS_FARES[pendingPass.passType];
@@ -565,10 +581,25 @@ function updatePaymentContext() {
             amountField.value = pendingPass.fare;
             amountField.readOnly = true;
         }
+        if (payBtn) {
+            payBtn.disabled = false;
+            payBtn.innerHTML = `
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Pay ₹${pendingPass.fare} & Buy Pass
+            `;
+        }
     } else {
         banner.classList.add('hidden');
         if (amountField) {
-            amountField.readOnly = false;
+            amountField.value = '';
+            amountField.placeholder = "Select a ticket or pass first";
+            amountField.readOnly = true;
+        }
+        if (payBtn) {
+            payBtn.disabled = true;
+            payBtn.innerHTML = `Select Route or Pass to Pay`;
         }
     }
 }
@@ -580,7 +611,13 @@ function cancelPendingPayment() {
     const amountField = document.getElementById('paymentAmount');
     if (amountField) {
         amountField.value = '';
-        amountField.readOnly = false;
+        amountField.placeholder = "Select a ticket or pass first";
+        amountField.readOnly = true;
+    }
+    const payBtn = document.getElementById('btnPayment');
+    if (payBtn) {
+        payBtn.disabled = true;
+        payBtn.innerHTML = `Select Route or Pass to Pay`;
     }
     switchDashTab(returnTab);
     showToast('Payment cancelled', 'info');
@@ -876,6 +913,9 @@ async function bookTicket() {
 function displayBookedTicket(data, source, destination) {
     const container = document.getElementById('bookedTicketContainer');
     container.classList.remove('hidden');
+
+    const busesCard = document.getElementById('availableBusesCard');
+    if (busesCard) busesCard.classList.add('hidden');
 
     document.getElementById('genTicketId').textContent = `#TKT-${data.ticket_id}`;
     document.getElementById('genTicketSource').textContent = source;

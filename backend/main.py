@@ -199,8 +199,28 @@ def apply_pass(
     db: Session = Depends(get_db)
 ):
 
+    latest_payment = db.query(Payment).filter(
+        Payment.user_id == pass_data.user_id,
+        Payment.payment_status == "SUCCESS"
+    ).order_by(
+        Payment.payment_id.desc()
+    ).first()
+
+    if not latest_payment:
+        raise HTTPException(
+            status_code=400,
+            detail="Please complete payment before generating bus pass"
+        )
+
     issue_date = datetime.now().date()
-    expiry_date = issue_date + timedelta(days=30)
+    if pass_data.pass_type == "daily":
+        expiry_date = issue_date + timedelta(days=1)
+    elif pass_data.pass_type == "weekly":
+        expiry_date = issue_date + timedelta(days=7)
+    elif pass_data.pass_type == "monthly":
+        expiry_date = issue_date + timedelta(days=30)
+    else:
+        expiry_date = issue_date + timedelta(days=30)
 
     new_pass = BusPass(
         user_id=pass_data.user_id,
