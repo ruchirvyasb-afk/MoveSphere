@@ -1,5 +1,6 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import qrcode
@@ -7,7 +8,7 @@ import os
 from fastapi.responses import FileResponse
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
-from models import User, BusPass, Ticket, Payment
+from models import Base, User, BusPass, Ticket, Payment
 from passlib.context import CryptContext
 from schemas import (
     UserCreate,
@@ -17,7 +18,7 @@ from schemas import (
     PaymentCreate
 )
 
-from database import SessionLocal
+from database import SessionLocal, engine
 from s3_utils import upload_file
 pwd_context = CryptContext(
     schemes=["bcrypt"],
@@ -27,6 +28,52 @@ pwd_context = CryptContext(
 app = FastAPI(
     title="Cloud Bus Pass System API"
 )
+
+
+def ensure_database_schema():
+    Base.metadata.create_all(bind=engine)
+
+    inspector = inspect(engine)
+    schema_updates = {
+        "bus_passes": {
+            "qr_url": "VARCHAR(500) DEFAULT ''",
+            "pdf_url": "VARCHAR(500) DEFAULT ''"
+        },
+        "tickets": {
+            "qr_url": "VARCHAR(500) DEFAULT ''",
+            "pdf_url": "VARCHAR(500) DEFAULT ''"
+        }
+    }
+
+    with engine.begin() as connection:
+        for table_name, columns in schema_updates.items():
+            existing_columns = {
+                column["name"]
+                for column in inspector.get_columns(table_name)
+            }
+
+            for column_name, column_definition in columns.items():
+                if column_name not in existing_columns:
+                    connection.execute(
+                        text(
+                            f"ALTER TABLE {table_name} "
+                            f"ADD COLUMN {column_name} {column_definition}"
+                        )
+                    )
+
+
+@app.on_event("startup")
+def startup():
+    ensure_database_schema()
+
+
+def upload_or_local_url(local_file, s3_file, local_url):
+    try:
+        return upload_file(local_file, s3_file)
+    except Exception:
+        return local_url
+
+
 def hash_password(password: str):
     return pwd_context.hash(password)
 
@@ -196,6 +243,7 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 @app.post("/apply-pass")
 def apply_pass(
     pass_data: PassCreate,
+    request: Request,
     db: Session = Depends(get_db)
 ):
 
@@ -258,30 +306,23 @@ Expiry Date: {new_pass.expiry_date}
     # Generate PDF using local QR file
     pdf_path = generate_pass_pdf(new_pass)
 
-    try:
-        # Upload files to S3
-        qr_url = upload_file(
-            qr_path,
-            f"passes/qr/pass_{new_pass.pass_id}.png"
-        )
+    qr_url = upload_or_local_url(
+        qr_path,
+        f"passes/qr/pass_{new_pass.pass_id}.png",
+        str(request.url_for("download_pass_qr", pass_id=new_pass.pass_id))
+    )
 
-        pdf_url = upload_file(
-            pdf_path,
-            f"passes/pdf/pass_{new_pass.pass_id}.pdf"
-        )
+    pdf_url = upload_or_local_url(
+        pdf_path,
+        f"passes/pdf/pass_{new_pass.pass_id}.pdf",
+        str(request.url_for("download_pass", pass_id=new_pass.pass_id))
+    )
 
-        # Save S3 URLs in database
-        new_pass.qr_url = qr_url
-        new_pass.pdf_url = pdf_url
+    new_pass.qr_url = qr_url
+    new_pass.pdf_url = pdf_url
 
-        db.commit()
-        db.refresh(new_pass)
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"S3 Upload Failed: {str(e)}"
-        )
+    db.commit()
+    db.refresh(new_pass)
 
     return {
         "message": "Bus Pass Applied Successfully",
@@ -309,7 +350,9 @@ def get_passes(db: Session = Depends(get_db)):
             "pass_type": p.pass_type,
             "issue_date": p.issue_date,
             "expiry_date": p.expiry_date,
-            "qr_code": p.qr_code
+            "qr_code": p.qr_code,
+            "qr_url": p.qr_url,
+            "pdf_url": p.pdf_url
         })
 
     return result
@@ -362,6 +405,7 @@ FARE_CHART = {
 @app.post("/book-ticket")
 def book_ticket(
     ticket_data: TicketCreate,
+    request: Request,
     db: Session = Depends(get_db)
 ):
 
@@ -428,31 +472,23 @@ Fare: {new_ticket.fare}
     # Generate PDF using local QR image
     pdf_path = generate_ticket_pdf(new_ticket)
 
-    try:
-        # Upload QR to S3
-        qr_url = upload_file(
-            qr_path,
-            f"tickets/qr/ticket_{new_ticket.ticket_id}.png"
-        )
+    qr_url = upload_or_local_url(
+        qr_path,
+        f"tickets/qr/ticket_{new_ticket.ticket_id}.png",
+        str(request.url_for("download_ticket_qr", ticket_id=new_ticket.ticket_id))
+    )
 
-        # Upload PDF to S3
-        pdf_url = upload_file(
-            pdf_path,
-            f"tickets/pdf/ticket_{new_ticket.ticket_id}.pdf"
-        )
+    pdf_url = upload_or_local_url(
+        pdf_path,
+        f"tickets/pdf/ticket_{new_ticket.ticket_id}.pdf",
+        str(request.url_for("download_ticket", ticket_id=new_ticket.ticket_id))
+    )
 
-        # Save S3 URLs in database
-        new_ticket.qr_url = qr_url
-        new_ticket.pdf_url = pdf_url
+    new_ticket.qr_url = qr_url
+    new_ticket.pdf_url = pdf_url
 
-        db.commit()
-        db.refresh(new_ticket)
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"S3 Upload Failed: {str(e)}"
-        )
+    db.commit()
+    db.refresh(new_ticket)
 
     return {
         "message": "Ticket booked successfully",
@@ -483,7 +519,9 @@ def get_tickets(db: Session = Depends(get_db)):
             "destination": t.destination,
             "fare": t.fare,
             "booking_date": t.booking_date,
-            "qr_code": t.qr_code
+            "qr_code": t.qr_code,
+            "qr_url": t.qr_url,
+            "pdf_url": t.pdf_url
         })
 
     return result
@@ -528,6 +566,23 @@ def download_ticket(ticket_id: int):
         media_type="application/pdf",
         filename=f"ticket_{ticket_id}.pdf"
     )
+
+
+@app.get("/download-ticket-qr/{ticket_id}", name="download_ticket_qr")
+def download_ticket_qr(ticket_id: int):
+
+    qr_path = f"qr_codes/tickets/ticket_{ticket_id}.png"
+
+    if not os.path.exists(qr_path):
+        return {
+            "message": "QR code not found"
+        }
+
+    return FileResponse(
+        path=qr_path,
+        media_type="image/png",
+        filename=f"ticket_{ticket_id}_qr.png"
+    )
     # ==========================
 # DOWNLOAD PASS PDF
 # ==========================
@@ -545,6 +600,23 @@ def download_pass(pass_id: int):
         path=pdf_path,
         media_type="application/pdf",
         filename=f"pass_{pass_id}.pdf"
+    )
+
+
+@app.get("/download-pass-qr/{pass_id}", name="download_pass_qr")
+def download_pass_qr(pass_id: int):
+
+    qr_path = f"qr_codes/passes/pass_{pass_id}.png"
+
+    if not os.path.exists(qr_path):
+        return {
+            "message": "QR code not found"
+        }
+
+    return FileResponse(
+        path=qr_path,
+        media_type="image/png",
+        filename=f"pass_{pass_id}_qr.png"
     )
 @app.post("/make-payment")
 def make_payment(
